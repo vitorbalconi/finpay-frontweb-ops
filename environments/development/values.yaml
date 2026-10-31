@@ -1,0 +1,7 @@
+# The CD workflow replaces digest with the immutable digest resolved from GHCR.
+image:
+  repository: ghcr.io/vitorbalconi/finpay-frontweb
+  tag: v1.0.0
+  digest: "" # PLACEHOLDER: populated by .github/workflows/deploy.yml
+
+appVersion: "v1.0.0"

@@ -1,0 +1,19 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/vitorbalconi/finpay-frontweb
+  tag: v1.0.0
+  digest: ""
+  pullPolicy: IfNotPresent
+
+appVersion: "v1.0.0"
+
+service:
+  port: 80
+
+probes:
+  path: /
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3

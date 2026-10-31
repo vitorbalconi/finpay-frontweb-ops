@@ -1,0 +1,120 @@
+name: Propose deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+      release:
+        description: Existing GHCR tag (for example, v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  propose:
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE: ghcr.io/vitorbalconi/finpay-frontweb
+      ENVIRONMENT: ${{ inputs.environment }}
+      RELEASE: ${{ inputs.release }}
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ENVIRONMENT" == "development" || "$ENVIRONMENT" == "production" ]] || {
+            echo "::error::environment must be development or production"
+            exit 1
+          }
+          [[ "$RELEASE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || {
+            echo "::error::release is not a valid container tag"
+            exit 1
+          }
+
+      - name: Check out protected main
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: main
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Resolve immutable image digest
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! resolved="$(crane digest "$IMAGE:$RELEASE")"; then
+            echo "::error::Image $IMAGE:$RELEASE does not exist in public GHCR or is not readable"
+            exit 1
+          fi
+          [[ "$resolved" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::GHCR returned an invalid digest: $resolved"
+            exit 1
+          }
+          echo "digest=${resolved#sha256:}" >> "$GITHUB_OUTPUT"
+
+      - name: Update selected environment only
+        id: update
+        shell: bash
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          values="environments/$ENVIRONMENT/values.yaml"
+          VALUES_FILE="$values" ruby <<'RUBY'
+          require "yaml"
+          path = ENV.fetch("VALUES_FILE")
+          values = YAML.safe_load_file(path)
+          wanted_digest = ENV.fetch("DIGEST")
+          wanted_version = ENV.fetch("RELEASE")
+          changed = values.dig("image", "digest") != wanted_digest || values["appVersion"] != wanted_version
+          if changed
+            values["image"]["digest"] = wanted_digest
+            values["appVersion"] = wanted_version
+            File.write(path, YAML.dump(values))
+          end
+          File.open(ENV.fetch("GITHUB_OUTPUT"), "a") { |f| f.puts "changed=#{changed}" }
+          RUBY
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.3.1
+        with:
+          version: v3.17.3
+
+      - name: Validate chart and selected values
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm lint charts/finpay-frontweb -f "environments/$ENVIRONMENT/values.yaml"
+          helm template finpay-frontweb charts/finpay-frontweb \
+            -f "environments/$ENVIRONMENT/values.yaml" > /dev/null
+
+      - name: Create deployment pull request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7.0.8
+        with:
+          token: ${{ github.token }}
+          base: main
+          branch: cd/${{ inputs.environment }}/${{ inputs.release }}
+          delete-branch: true
+          commit-message: "deploy(${{ inputs.environment }}): ${{ inputs.release }}"
+          title: "Deploy frontend ${{ inputs.release }} to ${{ inputs.environment }}"
+          body: |
+            Resolves `ghcr.io/vitorbalconi/finpay-frontweb:${{ inputs.release }}` to its immutable digest.
+
+            Merge this PR after review so Argo CD can observe the desired state on `main`.
+          add-paths: environments/${{ inputs.environment }}/values.yaml
+
+      - name: Report unchanged desired state
+        if: steps.update.outputs.changed != 'true'
+        run: echo "The selected environment already references this release and digest; no PR is needed."
