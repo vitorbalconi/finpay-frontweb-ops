@@ -2,5 +2,5 @@
 image:
   repository: ghcr.io/vitorbalconi/finpay-frontweb
   tag: v1.0.0
-  digest: ba268d0b2661a4e74a2d49032b2f911928d61853fed2e2dc0676e701ea93ce7d
-appVersion: v1.1.0
+  digest: 19456044240aaabf6161d5c1b39d2b966e89b2fc9fa6a00e1a937e6a3c53e78b
+appVersion: v1.0.0
