@@ -18,6 +18,8 @@ spec:
         - name: finpay-frontweb
           image: {{ include "finpay-frontweb.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
