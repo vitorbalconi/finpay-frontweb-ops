@@ -3,7 +3,11 @@ finpay-frontweb
 {{- end }}
 
 {{- define "finpay-frontweb.fullname" -}}
+{{- if contains (include "finpay-frontweb.name" .) .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
 {{- printf "%s-%s" .Release.Name (include "finpay-frontweb.name" .) | trunc 63 | trimSuffix "-" }}
+{{- end -}}
 {{- end }}
 
 {{- define "finpay-frontweb.labels" -}}
