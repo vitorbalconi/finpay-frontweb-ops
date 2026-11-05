@@ -11,7 +11,7 @@ on:
           - development
           - production
       release:
-        description: Existing GHCR tag (for example, v1.0.0)
+        description: Existing GHCR tag (for example, 1.0.0)
         required: true
         type: string
 
@@ -45,29 +45,9 @@ jobs:
         with:
           ref: main
 
-      - name: Install crane
-        uses: imjasonh/setup-crane@v0.4
-
-      - name: Resolve immutable image digest
-        id: image
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! resolved="$(crane digest "$IMAGE:$RELEASE")"; then
-            echo "::error::Image $IMAGE:$RELEASE does not exist in public GHCR or is not readable"
-            exit 1
-          fi
-          [[ "$resolved" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-            echo "::error::GHCR returned an invalid digest: $resolved"
-            exit 1
-          }
-          echo "digest=${resolved#sha256:}" >> "$GITHUB_OUTPUT"
-
       - name: Update selected environment only
         id: update
         shell: bash
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
         run: |
           set -euo pipefail
           values="environments/$ENVIRONMENT/values.yaml"
@@ -75,12 +55,10 @@ jobs:
           require "yaml"
           path = ENV.fetch("VALUES_FILE")
           values = YAML.safe_load_file(path)
-          wanted_digest = ENV.fetch("DIGEST")
           wanted_version = ENV.fetch("RELEASE")
-          changed = values.dig("image", "digest") != wanted_digest || values["appVersion"] != wanted_version
+          changed = values.dig("image", "tag") != wanted_version
           if changed
-            values["image"]["digest"] = wanted_digest
-            values["appVersion"] = wanted_version
+            values["image"]["tag"] = wanted_version
             File.write(path, YAML.dump(values))
           end
           File.open(ENV.fetch("GITHUB_OUTPUT"), "a") { |f| f.puts "changed=#{changed}" }
@@ -110,11 +88,11 @@ jobs:
           commit-message: "deploy(${{ inputs.environment }}): ${{ inputs.release }}"
           title: "Deploy frontend ${{ inputs.release }} to ${{ inputs.environment }}"
           body: |
-            Resolves `ghcr.io/vitorbalconi/finpay-frontweb:${{ inputs.release }}` to its immutable digest.
+            Updates the desired image tag to `ghcr.io/vitorbalconi/finpay-frontweb:${{ inputs.release }}`.
 
             Merge this PR after review so Argo CD can observe the desired state on `main`.
           add-paths: environments/${{ inputs.environment }}/values.yaml
 
       - name: Report unchanged desired state
         if: steps.update.outputs.changed != 'true'
-        run: echo "The selected environment already references this release and digest; no PR is needed."
+        run: echo "The selected environment already references this release tag; no PR is needed."
